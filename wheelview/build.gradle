@@ -1,48 +1,118 @@
-apply plugin: 'com.android.library'
-apply plugin: 'com.github.dcendents.android-maven'
-//apply plugin: 'com.novoda.bintray-release'//添加插件
-
-
-
+plugins {
+    id 'com.android.library'
+    id 'maven-publish'
+}
 android {
-    compileSdkVersion 26
+    namespace "com.contrarywind.view"
+    compileSdk 34
 
     defaultConfig {
-        minSdkVersion 14
-        targetSdkVersion 26
-        versionCode 31
-        versionName "4.1.0"
+        minSdk 24
+        targetSdk 34
     }
+
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
-    lintOptions {
+    lint {
         abortOnError false
+    }
+
+}
+
+dependencies {
+    implementation 'androidx.annotation:annotation:1.7.0'
+}
+
+tasks.register('sourceJar', Jar) {
+    from android.sourceSets.main.java.srcDirs
+    archiveClassifier = "sources"
+}
+
+publishing {
+    publications {
+        release(MavenPublication) {
+            artifact sourceJar
+            afterEvaluate { artifact(tasks.getByName("bundleReleaseAar")) }
+            groupId = "com.contrarywind"
+            artifactId = "view"
+            version = "1.0.0"
+
+            pom.withXml {
+                def dependenciesNode = asNode().appendNode('dependencies')
+                configurations.implementation.allDependencies.each {
+                    // 避免出现空节点或 artifactId=unspecified 的节点
+                    if (it.group != null && (it.name != null && "unspecified" != it.name) && it.version != null) {
+                        println "dependency=${it.toString()}"
+                        def dependencyNode = dependenciesNode.appendNode('dependency')
+                        dependencyNode.appendNode('groupId', it.group)
+                        dependencyNode.appendNode('artifactId', it.name)
+                        dependencyNode.appendNode('version', it.version)
+                        dependencyNode.appendNode('scope', 'implementation')
+                    }
+                }
+            }
+            // 添加其他元数据（可选）
+            pom {
+                name = 'Android Base Library'
+                description = 'From Creek'
+
+                licenses {
+                    license {
+                        name = 'The Apache License, Version 2.0'
+                        url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
+                    }
+                }
+
+                developers {
+                    developer {
+                        id = ''
+                        name = ''
+                        email = ''
+                    }
+                }
+            }
+        }
+    }
+    repositories {
+        maven {
+            name = "release"
+            url = uri(RELEASE_URL)
+            credentials {
+                username = USER_NAME ?: ""
+                password = PASSWORD ?: ""
+            }
+        }
+        maven {
+            name = "snapshot"
+            url = uri(SNAPSHOT_URL)
+            credentials {
+                username = USER_NAME ?: ""
+                password = PASSWORD ?: ""
+            }
+        }
     }
 }
 
-//allprojects {
-//    tasks.withType(Javadoc) {//兼容中文字符
-//        options{
-//            encoding "UTF-8"
-//            charSet 'UTF-8'
-//            links "http://docs.oracle.com/javase/7/docs/api"
-//        }
-//    }
-//}
-//publish {
-//    userOrg = 'contrarywind'//bintray.com 用户名/组织名 user/org name
-//    groupId = 'com.contrarywind'//JCenter上显示的路径 path
-//    artifactId = 'wheelview'//项目名称 project name
-//    publishVersion = '4.1.0'//版本号 version code
-//    desc = 'this is a wheelview for android'//项目描述 description
-//    website = 'https://github.com/Bigkoo/Android-PickerView' //项目网址链接 link
-//}
+// ---------- 发布任务组合 ----------
+tasks.register("publishAar") {
+    group = "publishing"
+    description = "Builds AAR + sources and publishes to configured Maven repositories"
 
-dependencies {
-//    compile fileTree(include: ['*.jar'], dir: 'libs')
-    implementation 'com.android.support:support-annotations:28.0.0'
+    // 依赖 assembleRelease 和 sourceJar
+    dependsOn "assembleRelease", "sourceJar"
+
+    doLast {
+        println "✔ AAR 和 Sources 已构建完成，开始发布到 Maven 仓库..."
+        // 触发 Maven 发布
+        tasks.withType(PublishToMavenRepository).each { publishTask ->
+            if (publishTask.name.contains("Release")) {
+                publishTask.execute()
+                println "✔ 发布完成: ${publishTask.name}"
+            }
+        }
+    }
 }
